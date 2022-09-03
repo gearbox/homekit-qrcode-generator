@@ -1,1 +1,2 @@
 qrcode[pil]>=6.1
+Pillow

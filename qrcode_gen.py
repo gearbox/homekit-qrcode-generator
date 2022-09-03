@@ -1,26 +1,27 @@
-#!/usr/bin/env python3
 import argparse
 import os.path
+import re
+
 import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
 import qrcode
-import re
-import sys
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
+template_image_name = 'template.png'
 
 BASE36 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
 PAYLOAD_VERSION = 0
 PAYLOAD_FLAGS = 2  # 2=IP, 4=BLE, 8=IP_WAC
 
+
 def gen_homekit_setup_uri(category, password, setup_id, version=0, reserved=0, flags=2):
     payload = 0
     payload |= (version & 0x7)
 
     payload <<= 4
-    payload |=(reserved & 0xf)  # reserved bits
+    payload |= (reserved & 0xf)  # reserved bits
 
     payload <<= 8
     payload |= (category & 0xff)
@@ -31,40 +32,32 @@ def gen_homekit_setup_uri(category, password, setup_id, version=0, reserved=0, f
     payload <<= 27
     payload |= (int(password.replace('-', '')) & 0x7fffffff)
 
-    encodedPayload = ''
+    encoded_payload = ''
     for _ in range(9):
-        encodedPayload += BASE36[payload % 36]
+        encoded_payload += BASE36[payload % 36]
         payload //= 36
 
-    return 'X-HM://%s%s' % (''.join(reversed(encodedPayload)), setup_id)
+    return f"X-HM://{''.join(reversed(encoded_payload))}{setup_id}"
 
 
 def gen_homekit_qrcode(setup_uri, password, transparent=False):
     back_color = 'transparent' if transparent else 'white'
 
     # open template
-    template = PIL.Image.open(os.path.join(script_dir, 'qrcode.png'))
+    template = PIL.Image.open(os.path.join(script_dir, template_image_name))
 
-    img = PIL.Image.new('RGBA', template.size, None)
+    img = PIL.Image.new('RGBA', template.size, 0)
     draw = PIL.ImageDraw.Draw(img)
 
     if not transparent:
-        draw.rounded_rectangle((5, 5, img.width-5, img.height-5), 60, fill='white')
+        draw.rounded_rectangle((5, 5, img.width - 5, img.height - 5), 60, fill='white')
 
     img.paste(template, (0, 0), template)
 
     # add QR code to it
-    code = qrcode.QRCode(version=2, border=0, box_size=12.5,
-                         error_correction=qrcode.constants.ERROR_CORRECT_Q)
+    code = qrcode.QRCode(version=2, border=0, box_size=12.5, error_correction=qrcode.constants.ERROR_CORRECT_Q)
     code.add_data(setup_uri)
-    img.paste(
-        code.
-            make_image(fill_color='black',
-                       back_color='transparent' if transparent else 'white').
-            get_image().
-            resize((320, 320)),
-        (40, 180)
-    )
+    img.paste(code.make_image(fill_color='black', back_color=back_color).get_image().resize((320, 320)), (40, 180))
 
     # add password digits
     setup_code = password.replace('-', '')
@@ -72,8 +65,8 @@ def gen_homekit_qrcode(setup_uri, password, transparent=False):
     font = PIL.ImageFont.truetype(os.path.join(script_dir, 'SF-Mono-Bold.otf'), 69)
 
     for i in range(4):
-        draw.text((173 + i*49, 38-13), setup_code[i], font=font, fill=(0, 0, 0))
-        draw.text((173 + i*49, 88), setup_code[i+4], font=font, fill=(0, 0, 0))
+        draw.text((173 + i * 49, 38 - 13), setup_code[i], font=font, fill=(0, 0, 0))
+        draw.text((173 + i * 49, 88), setup_code[i + 4], font=font, fill=(0, 0, 0))
 
     return img
 
@@ -88,19 +81,14 @@ def main():
 
     args = parser.parse_args()
 
-    if not re.match('\d{3}-\d{2}-\d{3}', args.password):
+    if not re.match(r'\d{3}-\d{2}-\d{3}', args.password):
         raise ValueError('Invalid password')
 
     if not re.match('[0-9A-Z]{4}', args.setup_id):
         raise ValueError('Invalid setup ID')
-
-    setupURI = gen_homekit_setup_uri(args.category, args.password, args.setup_id)
-
-    qrcodeImage = gen_homekit_qrcode(
-        setupURI, args.password, transparent=args.transparent
-    )
-
-    qrcodeImage.save(args.output_image)
+    setup_uri = gen_homekit_setup_uri(args.category, args.password, args.setup_id)
+    qrcode_image = gen_homekit_qrcode(setup_uri, args.password, transparent=args.transparent)
+    qrcode_image.save(args.output_image)
 
 
 if __name__ == '__main__':
